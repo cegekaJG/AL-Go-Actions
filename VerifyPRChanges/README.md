@@ -1,15 +1,12 @@
 # Verify Pull Request changes
-
 Verify Pull Request Changes for AL-Go workflows
 
 ## INPUT
 
 ### ENV variables
-
 none
 
 ### Parameters
-
 | Name | Required | Description | Default value |
 | :-- | :-: | :-- | :-- |
 | shell | | The shell (powershell or pwsh) in which the PowerShell script in this action should run | powershell |
@@ -18,5 +15,4 @@ none
 | pullRequestId | | The id of the pull request | github.event.pull_request.number |
 
 ## OUTPUT
-
 none

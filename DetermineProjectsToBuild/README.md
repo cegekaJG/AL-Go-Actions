@@ -1,5 +1,4 @@
 # Determine projects to build
-
 Scans for AL-Go projects and determines which one to build
 
 The action also computes build dimensions, based on the projects and the build modes for each of them
@@ -7,11 +6,9 @@ The action also computes build dimensions, based on the projects and the build m
 ## INPUT
 
 ### ENV variables
-
 none
 
 ### Parameters
-
 | Name | Required | Description | Default value |
 | :-- | :-: | :-- | :-- |
 | shell | | The shell (powershell or pwsh) in which the PowerShell script in this action should run | powershell |
@@ -21,11 +18,9 @@ none
 ## OUTPUT
 
 ### ENV variables
-
 none
 
 ### OUTPUT variables
-
 | Name | Description |
 | :-- | :-- |
 | ProjectsJson | An array of AL-Go projects in compressed JSON format |

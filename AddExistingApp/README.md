@@ -1,15 +1,12 @@
 # Add existing app
-
 Add an existing app to an AL-Go for GitHub repository
 
 ## INPUT
 
 ### ENV variables
-
 none
 
 ### Parameters
-
 | Name | Required | Description | Default value |
 | :-- | :-: | :-- | :-- |
 | shell | | The shell (powershell or pwsh) in which the PowerShell script in this action should run | powershell |
@@ -22,5 +19,4 @@ none
 | directCommit | | true if the action should create a direct commit against the branch or false to create a Pull Request | false |
 
 ## OUTPUT
-
 none

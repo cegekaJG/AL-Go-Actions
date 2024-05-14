@@ -20,7 +20,7 @@ $defaultCICDPullRequestBranches = @( 'main' )
 $runningLocal = $local.IsPresent
 $defaultBcContainerHelperVersion = "latest" # Must be double quotes. Will be replaced by BcContainerHelperVersion if necessary in the deploy step - ex. "https://github.com/organization/navcontainerhelper/archive/refs/heads/branch.zip"
 $microsoftTelemetryConnectionString = "InstrumentationKey=84bd9223-67d4-4378-8590-9e4a46023be2;IngestionEndpoint=https://westeurope-1.in.applicationinsights.azure.com/"
-$notSecretProperties = @("Scopes","TenantId","BlobName","ContainerName","StorageAccountName","ServerUrl")
+$notSecretProperties = @("Scopes","TenantId","BlobName","ContainerName","StorageAccountName","ServerUrl","ppUserName")
 
 $runAlPipelineOverrides = @(
     "DockerPull"
@@ -554,6 +554,7 @@ function ReadSettings {
         "type"                                          = "PTE"
         "unusedALGoSystemFiles"                         = @()
         "projects"                                      = @()
+        "powerPlatformSolutionFolder"                   = ""
         "country"                                       = "us"
         "artifact"                                      = ""
         "companyName"                                   = ""
@@ -1553,7 +1554,8 @@ function CreateDevEnv {
         [Parameter(ParameterSetName = 'local')]
         [string] $containerName = "",
         [string] $licenseFileUrl = "",
-        [switch] $accept_insiderEula
+        [switch] $accept_insiderEula,
+        [switch] $clean
     )
 
     if ($PSCmdlet.ParameterSetName -ne $kind) {
@@ -1709,6 +1711,15 @@ function CreateDevEnv {
 
         if ((-not $settings.appFolders) -and (-not $settings.testFolders)) {
             Write-Host "Repository is empty"
+        }
+
+        if ($clean) {
+            $appFolders = @()
+            $testFolders = @()
+        }
+        else {
+            $appFolders = $settings.appFolders
+            $testFolders = $settings.testFolders
         }
 
         $installApps = $settings.installApps
@@ -1905,8 +1916,8 @@ function CreateDevEnv {
                 -installApps $installApps `
                 -installTestApps $installTestApps `
                 -installOnlyReferencedApps:$settings.installOnlyReferencedApps `
-                -appFolders $settings.appFolders `
-                -testFolders $settings.testFolders `
+                -appFolders $appFolders `
+                -testFolders $testFolders `
                 -testResultsFile $testResultsFile `
                 -testResultsFormat 'JUnit' `
                 -customCodeCops $settings.customCodeCops `
@@ -2291,12 +2302,30 @@ function RetryCommand {
     }
 }
 
+function GetMatchingProjects {
+    Param(
+        [string[]] $projects,
+        [string] $selectProjects = ''
+    )
+
+    if ($selectProjects) {
+        # Filter the project list based on the projects parameter
+        if ($selectProjects.StartsWith('[')) {
+            $selectProjects = ($selectProjects | ConvertFrom-Json) -join ","
+        }
+        $projectArr = $selectProjects.Split(',').Trim()
+        $projects = @($projects | Where-Object { $project = $_; if ($projectArr | Where-Object { $project -like $_ }) { $project } })
+    }
+    return $projects
+}
+
 function GetProjectsFromRepository {
     Param(
         [string] $baseFolder,
         [string[]] $projectsFromSettings,
         [string] $selectProjects = ''
     )
+
     if ($projectsFromSettings) {
         $projects = $projectsFromSettings
     }
@@ -2308,18 +2337,7 @@ function GetProjectsFromRepository {
             $projects += @(".")
         }
     }
-    if ($selectProjects) {
-        # Filter the project list based on the projects parameter
-        if ($selectProjects.StartsWith('[')) {
-            $selectProjects = ($selectProjects | ConvertFrom-Json) -join ","
-        }
-        $projectArr = $selectProjects.Split(',').Trim()
-        $projects = @($projects | Where-Object { $project = $_; if ($projectArr | Where-Object { $project -like $_ }) { $project } })
-        if ($projects.Count -eq 0) {
-            throw "No projects matches '$selectProjects'"
-        }
-    }
-    return $projects
+    return @(GetMatchingProjects -projects $projects -selectProjects $selectProjects)
 }
 
 function Get-PackageVersion($PackageName) {

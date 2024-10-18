@@ -101,6 +101,9 @@ $checkfiles = @(
     @{ 'dstPath' = '.github'; 'srcPath' = '.github'; 'pattern' = '*.copy.md'; 'type' = 'releasenotes' }
 )
 
+# Add template files from RepoSettings, if any
+$checkFiles += GetCustomTemplateFiles -repoSettings $repoSettings
+
 # Get the list of projects in the current repository
 $baseFolder = $ENV:GITHUB_WORKSPACE
 $projects = @(GetProjectsFromRepository -baseFolder $baseFolder -projectsFromSettings $repoSettings.projects)

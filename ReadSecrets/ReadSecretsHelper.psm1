@@ -26,6 +26,7 @@ function GetAzureCredentials {
     return $null
 }
 
+
 function MaskValue {
     Param(
         [string] $key,
@@ -115,16 +116,6 @@ function GetKeyVaultCredentials {
         }
         elseif (!($keyVaultNameExists)) {
             # If KeyVaultName is not defined - return null (i.e. do not use a KeyVault)
-            $creds = $null
-        }
-    }
-    if ($creds) {
-        try {
-            # check that we have access to get secrets from the keyvault by trying to get a dummy secret
-            GetKeyVaultSecret -secretName 'algodummysecret' -keyVaultCredentials $creds -encrypted | Out-Null
-        }
-        catch {
-            Write-Host "Unable to get secrets from Azure Key Vault. Error was $($_.Exception.Message). Using Github secrets instead."
             $creds = $null
         }
     }

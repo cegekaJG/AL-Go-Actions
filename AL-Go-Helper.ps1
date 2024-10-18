@@ -19,6 +19,7 @@ $defaultCICDPushBranches = @( 'main', 'release/*', 'feature/*' )
 $defaultCICDPullRequestBranches = @( 'main' )
 $runningLocal = $local.IsPresent
 $defaultBcContainerHelperVersion = "latest" # Must be double quotes. Will be replaced by BcContainerHelperVersion if necessary in the deploy step - ex. "https://github.com/organization/navcontainerhelper/archive/refs/heads/branch.zip"
+$microsoftTelemetryConnectionString = "InstrumentationKey=84bd9223-67d4-4378-8590-9e4a46023be2;IngestionEndpoint=https://westeurope-1.in.applicationinsights.azure.com/"
 $notSecretProperties = @("Scopes","TenantId","BlobName","ContainerName","StorageAccountName","ServerUrl","ppUserName")
 
 $runAlPipelineOverrides = @(
@@ -630,7 +631,7 @@ function ReadSettings {
         "cacheImageName"                                = "my"
         "cacheKeepDays"                                 = 3
         "alwaysBuildAllProjects"                        = $false
-        "microsoftTelemetryConnectionString"            = "InstrumentationKey=cd2cc63e-0f37-4968-b99a-532411a314b8;IngestionEndpoint=https://northeurope-2.in.applicationinsights.azure.com/"
+        "microsoftTelemetryConnectionString"            = $microsoftTelemetryConnectionString
         "partnerTelemetryConnectionString"              = ""
         "sendExtendedTelemetryToMicrosoft"              = $false
         "environments"                                  = @()
@@ -657,7 +658,6 @@ function ReadSettings {
             "defaultIndexMD"                            = "## Reference documentation\n\nThis is the generated reference documentation for [{REPOSITORY}](https://github.com/{REPOSITORY}).\n\nYou can use the navigation bar at the top and the table of contents to the left to navigate your documentation.\n\nYou can change this content by creating/editing the **{INDEXTEMPLATERELATIVEPATH}** file in your repository or use the alDoc:defaultIndexMD setting in your repository settings file (.github/AL-Go-Settings.json)\n\n{RELEASENOTES}"
             "defaultReleaseMD"                          = "## Release reference documentation\n\nThis is the generated reference documentation for [{REPOSITORY}](https://github.com/{REPOSITORY}).\n\nYou can use the navigation bar at the top and the table of contents to the left to navigate your documentation.\n\nYou can change this content by creating/editing the **{INDEXTEMPLATERELATIVEPATH}** file in your repository or use the alDoc:defaultReleaseMD setting in your repository settings file (.github/AL-Go-Settings.json)\n\n{RELEASENOTES}"
         }
-        "trustMicrosoftNuGetFeeds"                      = $true
     }
 
     # Read settings from files and merge them into the settings object
@@ -769,11 +769,6 @@ function ReadSettings {
     if ($settings.shell -ne "powershell" -and $settings.shell -ne "pwsh") {
         throw "Invalid value for setting: shell: $($settings.githubRunnerShell)"
     }
-    if (($settings.githubRunner -like "ubuntu-*") -and ($settings.githubRunnerShell -eq "powershell")) {
-        Write-Host "Switching shell to pwsh for ubuntu"
-        $settings.githubRunnerShell = "pwsh"
-    }
-
     if($settings.projectName -eq '') {
         $settings.projectName = $project # Default to project path as project name
     }

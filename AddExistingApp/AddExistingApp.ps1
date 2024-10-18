@@ -3,6 +3,8 @@ Param(
     [string] $actor,
     [Parameter(HelpMessage = "The GitHub token running the action", Mandatory = $false)]
     [string] $token,
+    [Parameter(HelpMessage = "Specifies the parent telemetry scope for the telemetry signal", Mandatory = $false)]
+    [string] $parentTelemetryScopeJson = '7b7d',
     [Parameter(HelpMessage = "Project name if the repository is setup for multiple projects", Mandatory = $false)]
     [string] $project = '.',
     [Parameter(HelpMessage = "Direct Download Url of .app or .zip file", Mandatory = $true)]
@@ -76,135 +78,149 @@ function expandfile {
     }
 }
 
-. (Join-Path -Path $PSScriptRoot -ChildPath "..\AL-Go-Helper.ps1" -Resolve)
-$serverUrl, $branch = CloneIntoNewFolder -actor $actor -token $token -updateBranch $updateBranch -DirectCommit $directCommit -newBranchPrefix 'add-existing-app'
-$baseFolder = (Get-Location).path
-DownloadAndImportBcContainerHelper -baseFolder $baseFolder
+$telemetryScope = $null
 
+try {
+    . (Join-Path -Path $PSScriptRoot -ChildPath "..\AL-Go-Helper.ps1" -Resolve)
+    $serverUrl, $branch = CloneIntoNewFolder -actor $actor -token $token -updateBranch $updateBranch -DirectCommit $directCommit -newBranchPrefix 'add-existing-app'
+    $baseFolder = (Get-Location).path
+    DownloadAndImportBcContainerHelper -baseFolder $baseFolder
 
-$type = "PTE"
-Write-Host "Reading $RepoSettingsFile"
-$settingsJson = Get-Content $RepoSettingsFile -Encoding UTF8 | ConvertFrom-Json
-if ($settingsJson.PSObject.Properties.Name -eq "type") {
-    $type = $settingsJson.type
-}
+    import-module (Join-Path -path $PSScriptRoot -ChildPath "..\TelemetryHelper.psm1" -Resolve)
+    $telemetryScope = CreateScope -eventId 'DO0070' -parentTelemetryScopeJson $parentTelemetryScopeJson
 
-CheckAndCreateProjectFolder -project $project
-$projectFolder = (Get-Location).path
-
-$appNames = @()
-getfiles -url $url | ForEach-Object {
-    $appFolder = $_
-    "?Content_Types?.xml", "MediaIdListing.xml", "navigation.xml", "NavxManifest.xml", "DocComments.xml", "SymbolReference.json" | ForEach-Object {
-        Remove-Item (Join-Path $appFolder $_) -Force -ErrorAction SilentlyContinue
-    }
-    $appJson = Get-Content (Join-Path $appFolder "app.json") -Encoding UTF8 | ConvertFrom-Json
-    $appNames += @($appJson.Name)
-
-    $ranges = @()
-    if ($appJson.PSObject.Properties.Name -eq "idRanges") {
-        $ranges += $appJson.idRanges
-    }
-    if ($appJson.PSObject.Properties.Name -eq "idRange") {
-        $ranges += @($appJson.idRange)
+    $type = "PTE"
+    Write-Host "Reading $RepoSettingsFile"
+    $settingsJson = Get-Content $RepoSettingsFile -Encoding UTF8 | ConvertFrom-Json
+    if ($settingsJson.PSObject.Properties.Name -eq "type") {
+        $type = $settingsJson.type
     }
 
-    # Determine whether the app is PTE or AppSource App based on one of the id ranges (the first)
-    if ($ranges[0].from -lt 100000 -and $ranges[0].to -lt 100000) {
-        $ttype = "PTE"
-    }
-    else {
-        $ttype = "AppSource App"
-    }
+    CheckAndCreateProjectFolder -project $project
+    $projectFolder = (Get-Location).path
 
-    if ($appJson.PSObject.Properties.Name -eq "dependencies") {
-        foreach($dependency in $appJson.dependencies) {
-            if ($dependency.PSObject.Properties.Name -eq "AppId") {
-                $id = $dependency.AppId
-            }
-            else {
-                $id = $dependency.Id
-            }
-            if ($testRunnerApps.Contains($id)) {
-                $ttype = "Test App"
-            }
+    $appNames = @()
+    getfiles -url $url | ForEach-Object {
+        $appFolder = $_
+        "?Content_Types?.xml", "MediaIdListing.xml", "navigation.xml", "NavxManifest.xml", "DocComments.xml", "SymbolReference.json" | ForEach-Object {
+            Remove-Item (Join-Path $appFolder $_) -Force -ErrorAction SilentlyContinue
         }
-    }
+        $appJson = Get-Content (Join-Path $appFolder "app.json") -Encoding UTF8 | ConvertFrom-Json
+        $appNames += @($appJson.Name)
 
-    if ($ttype -ne "Test App") {
-        foreach($appName in (Get-ChildItem -Path $appFolder -Filter "*.al" -Recurse).FullName) {
-            $alContent = (Get-Content -Path $appName -Encoding UTF8) -join "`n"
-            if ($alContent -like "*codeunit*subtype*=*test*[test]*") {
-                $ttype = "Test App"
-            }
+        $ranges = @()
+        if ($appJson.PSObject.Properties.Name -eq "idRanges") {
+            $ranges += $appJson.idRanges
         }
-    }
-
-    if ($ttype -ne "Test App" -and $ttype -ne $type) {
-        OutputWarning -message "According to settings, repository is for apps of type $type. The app you are adding seams to be of type $ttype"
-    }
-
-    $appFolders = Get-ChildItem -Path $appFolder | Where-Object { $_.PSIsContainer -and (Test-Path (Join-Path $_.FullName 'app.json')) }
-    if (-not $appFolders) {
-        $appFolders = @($appFolder)
-        # TODO: What to do about the über app.json - another workspace? another setting?
-    }
-
-    $orgfolderName = $appJson.name.Split([System.IO.Path]::getInvalidFileNameChars()) -join ""
-    $folderName = GetUniqueFolderName -baseFolder $projectFolder -folderName $orgfolderName
-    if ($folderName -ne $orgfolderName) {
-        OutputWarning -message "$orgFolderName already exists as a folder in the repo, using $folderName instead"
-    }
-
-    Move-Item -Path $appFolder -Destination $projectFolder -Force
-    Rename-Item -Path ([System.IO.Path]::GetFileName($appFolder)) -NewName $folderName
-    $appFolder = Join-Path $projectFolder $folderName
-
-    Get-ChildItem $appFolder -Filter '*.*' -Recurse | ForEach-Object {
-        if ($_.Name.Contains('%20')) {
-            Rename-Item -Path $_.FullName -NewName $_.Name.Replace('%20', ' ')
+        if ($appJson.PSObject.Properties.Name -eq "idRange") {
+            $ranges += @($appJson.idRange)
         }
-    }
 
-    $appFolders | ForEach-Object {
-        # Modify .AL-Go\settings.json
-        try {
-            $settingsJsonFile = Join-Path $projectFolder $ALGoSettingsFile
-            $SettingsJson = Get-Content $settingsJsonFile -Encoding UTF8 | ConvertFrom-Json
-            if (@($settingsJson.appFolders) + @($settingsJson.testFolders)) {
-                if ($ttype -eq "Test App") {
-                    if ($SettingsJson.testFolders -notcontains $foldername) {
-                        $SettingsJson.testFolders += @($folderName)
-                    }
+        # Determine whether the app is PTE or AppSource App based on one of the id ranges (the first)
+        if ($ranges[0].from -lt 100000 -and $ranges[0].to -lt 100000) {
+            $ttype = "PTE"
+        }
+        else {
+            $ttype = "AppSource App"
+        }
+
+        if ($appJson.PSObject.Properties.Name -eq "dependencies") {
+            foreach($dependency in $appJson.dependencies) {
+                if ($dependency.PSObject.Properties.Name -eq "AppId") {
+                    $id = $dependency.AppId
                 }
                 else {
-                    if ($SettingsJson.appFolders -notcontains $foldername) {
-                        $SettingsJson.appFolders += @($folderName)
-                    }
+                    $id = $dependency.Id
                 }
-                $SettingsJson | Set-JsonContentLF -Path $settingsJsonFile
+                if ($testRunnerApps.Contains($id)) {
+                    $ttype = "Test App"
+                }
             }
-        }
-        catch {
-            throw "$ALGoSettingsFile is malformed. Error: $($_.Exception.Message)"
         }
 
-        # Modify workspace
-        Get-ChildItem -Path $projectFolder -Filter "*.code-workspace" | ForEach-Object {
-            try {
-                $workspaceFileName = $_.Name
-                $workspaceFile = $_.FullName
-                $workspace = Get-Content $workspaceFile -Encoding UTF8 | ConvertFrom-Json
-                if (-not ($workspace.folders | Where-Object { $_.Path -eq $foldername })) {
-                    $workspace.folders += @(@{ "path" = $foldername })
+        if ($ttype -ne "Test App") {
+            foreach($appName in (Get-ChildItem -Path $appFolder -Filter "*.al" -Recurse).FullName) {
+                $alContent = (Get-Content -Path $appName -Encoding UTF8) -join "`n"
+                if ($alContent -like "*codeunit*subtype*=*test*[test]*") {
+                    $ttype = "Test App"
                 }
-                $workspace | Set-JsonContentLF -Path $workspaceFile
+            }
+        }
+
+        if ($ttype -ne "Test App" -and $ttype -ne $type) {
+            OutputWarning -message "According to settings, repository is for apps of type $type. The app you are adding seams to be of type $ttype"
+        }
+
+        $appFolders = Get-ChildItem -Path $appFolder | Where-Object { $_.PSIsContainer -and (Test-Path (Join-Path $_.FullName 'app.json')) }
+        if (-not $appFolders) {
+            $appFolders = @($appFolder)
+            # TODO: What to do about the über app.json - another workspace? another setting?
+        }
+
+        $orgfolderName = $appJson.name.Split([System.IO.Path]::getInvalidFileNameChars()) -join ""
+        $folderName = GetUniqueFolderName -baseFolder $projectFolder -folderName $orgfolderName
+        if ($folderName -ne $orgfolderName) {
+            OutputWarning -message "$orgFolderName already exists as a folder in the repo, using $folderName instead"
+        }
+
+        Move-Item -Path $appFolder -Destination $projectFolder -Force
+        Rename-Item -Path ([System.IO.Path]::GetFileName($appFolder)) -NewName $folderName
+        $appFolder = Join-Path $projectFolder $folderName
+
+        Get-ChildItem $appFolder -Filter '*.*' -Recurse | ForEach-Object {
+            if ($_.Name.Contains('%20')) {
+                Rename-Item -Path $_.FullName -NewName $_.Name.Replace('%20', ' ')
+            }
+        }
+
+        $appFolders | ForEach-Object {
+            # Modify .AL-Go\settings.json
+            try {
+                $settingsJsonFile = Join-Path $projectFolder $ALGoSettingsFile
+                $SettingsJson = Get-Content $settingsJsonFile -Encoding UTF8 | ConvertFrom-Json
+                if (@($settingsJson.appFolders) + @($settingsJson.testFolders)) {
+                    if ($ttype -eq "Test App") {
+                        if ($SettingsJson.testFolders -notcontains $foldername) {
+                            $SettingsJson.testFolders += @($folderName)
+                        }
+                    }
+                    else {
+                        if ($SettingsJson.appFolders -notcontains $foldername) {
+                            $SettingsJson.appFolders += @($folderName)
+                        }
+                    }
+                    $SettingsJson | Set-JsonContentLF -Path $settingsJsonFile
+                }
             }
             catch {
-                throw "$workspaceFileName is malformed.$([environment]::Newline) $($_.Exception.Message)"
+                throw "$ALGoSettingsFile is malformed. Error: $($_.Exception.Message)"
+            }
+
+            # Modify workspace
+            Get-ChildItem -Path $projectFolder -Filter "*.code-workspace" | ForEach-Object {
+                try {
+                    $workspaceFileName = $_.Name
+                    $workspaceFile = $_.FullName
+                    $workspace = Get-Content $workspaceFile -Encoding UTF8 | ConvertFrom-Json
+                    if (-not ($workspace.folders | Where-Object { $_.Path -eq $foldername })) {
+                        $workspace.folders += @(@{ "path" = $foldername })
+                    }
+                    $workspace | Set-JsonContentLF -Path $workspaceFile
+                }
+                catch {
+                    throw "$workspaceFileName is malformed.$([environment]::Newline) $($_.Exception.Message)"
+                }
             }
         }
     }
+    Set-Location $baseFolder
+    CommitFromNewFolder -serverUrl $serverUrl -commitMessage "Add existing apps ($($appNames -join ', '))" -branch $branch | Out-Null
+
+    TrackTrace -telemetryScope $telemetryScope
 }
-Set-Location $baseFolder
-CommitFromNewFolder -serverUrl $serverUrl -commitMessage "Add existing apps ($($appNames -join ', '))" -branch $branch | Out-Null
+catch {
+    if (Get-Module BcContainerHelper) {
+        TrackException -telemetryScope $telemetryScope -errorRecord $_
+    }
+    throw
+}

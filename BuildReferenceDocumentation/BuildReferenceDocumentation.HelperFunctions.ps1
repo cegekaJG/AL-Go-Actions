@@ -1,6 +1,5 @@
 function DownloadAlDoc {
     if ("$ENV:aldocPath" -eq "") {
-        $ENV:aldocCommand = ''
         Write-Host "Locating aldoc"
         $artifactUrl = Get-BCArtifactUrl -type sandbox -country core -select Latest -accept_insiderEula
         Write-Host "Downloading aldoc"
@@ -14,14 +13,6 @@ function DownloadAlDoc {
         Remove-Item -Path "$($tempFolder).zip" -Force
         if ($IsLinux) {
             $ENV:aldocPath = Join-Path $tempFolder 'extension/bin/linux/aldoc'
-            if (Test-Path $ENV:aldocPath) {
-                & /usr/bin/env sudo pwsh -command "& chmod +x $ENV:aldocPath"
-            }
-            else {
-                # If the executable isn't found, use dotnet to run the dll
-                $ENV:aldocPath = Join-Path $tempFolder 'extension/bin/linux/aldoc.dll'
-                $ENV:aldocCommand = 'dotnet'
-            }
         }
         else {
             $ENV:aldocPath = Join-Path $tempFolder 'extension/bin/win32/aldoc.exe'
@@ -30,11 +21,12 @@ function DownloadAlDoc {
             throw "aldoc tool not found at $ENV:aldocPath"
         }
         if ($IsLinux) {
+            & /usr/bin/env sudo pwsh -command "& chmod +x $ENV:aldocPath"
         }
         Write-Host "Installing/Updating docfx"
         CmdDo -command dotnet -arguments @("tool","update","--global docfx --version 2.75.3") -messageIfCmdNotFound "dotnet not found. Please install it from https://dotnet.microsoft.com/download"
     }
-    return $ENV:aldocPath, $ENV:aldocCommand
+    return $ENV:aldocPath
 }
 
 function SanitizeFileName([string] $fileName) {
@@ -175,15 +167,7 @@ function GenerateDocsSite {
     }
     $indexContent = ReplacePlaceHolders -str $indexTemplate -version $version -releaseNotes $releaseNotes -indexTemplateRelativePath $thisTemplateRelativePath
 
-    $aldocPath, $aldocCommand = DownloadAlDoc
-    if ($aldocCommand) {
-        $aldocArguments = @($aldocPath)
-    }
-    else {
-        $aldocArguments = @()
-        $aldocCommand = $aldocPath
-    }
-
+    $alDocPath = DownloadAlDoc
     $docfxPath = Join-Path ([System.IO.Path]::GetTempPath()) ([Guid]::NewGuid().ToString())
     New-Item -Path $docfxPath -ItemType Directory | Out-Null
     try {
@@ -197,14 +181,14 @@ function GenerateDocsSite {
         }
         $apps = @($apps | Select-Object -Unique)
 
-        $arguments = $aldocArguments + @(
+        $arguments = @(
             "init"
             "--output ""$docfxpath"""
             "--loglevel $loglevel"
             "--targetpackages ""$($apps -join '","')"""
             )
-        Write-Host "invoke $aldocCommand $arguments"
-        CmdDo -command $aldocCommand -arguments $arguments
+        Write-Host "invoke aldoc $arguments"
+        CmdDo -command $aldocPath -arguments $arguments
 
         # Update docfx.json
         Write-Host "Update docfx.json"
@@ -230,14 +214,14 @@ function GenerateDocsSite {
         Get-Content $tocYmlFile | Out-Host
 
         $apps | ForEach-Object {
-            $arguments = $aldocArguments + @(
+            $arguments = @(
                 "build"
                 "--output ""$docfxpath"""
                 "--loglevel $loglevel"
                 "--source ""$_"""
                 )
-            Write-Host "invoke $aldocCommand $arguments"
-            CmdDo -command $aldocCommand -arguments $arguments
+            Write-Host "invoke aldoc $arguments"
+            CmdDo -command $aldocPath -arguments $arguments
         }
 
         # Set release notes
